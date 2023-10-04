@@ -1,0 +1,115 @@
+import sys
+import os
+import pandas as pd
+import numpy as np
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+import statsmodels.tsa.api as smt
+from statsmodels.tsa.stattools import adfuller
+from statsmodels.tsa.arima_model import ARIMA
+from statsmodels.stats.diagnostic import acorr_ljungbox 
+from statsmodels.graphics.api import qqplot
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+import matplotlib.pylab as plt
+from matplotlib.pylab import style
+style.use('ggplot')
+from arch.unitroot import ADF
+import warnings
+warnings.filterwarnings("ignore")
+pd.set_option('display.float_format', lambda x: '%.5f' % x) 
+np.set_printoptions(precision=5, suppress=True) 
+pd.set_option('display.max_columns', 100)
+pd.set_option('display.max_rows', 100)
+import datetime as dt
+import seaborn as sns
+
+
+plt.rcParams['font.sans-serif'] = ['SimHei'] # 设置中文字体
+
+plt.rcParams['axes.unicode_minus'] = False # 解决负号显示问题
+
+dataframe=pd.read_excel('品类销量按天汇总.xlsx')
+#dataframe=dataframe[0:19]
+columns = dataframe.columns
+data = dataframe.set_index('销售日期')
+data.index = pd.to_datetime(data.index)
+
+
+def draw_ts(df,col):
+    df["diff1"] = df[str(col)].diff(1).dropna()
+    df["diff2"] = df["diff1"].diff(1).dropna()
+    df1 = df.loc[:,[str(col),"diff1","diff2"]]
+    df1.plot(subplots=True, figsize=(18, 12),title=str(col)+"差分时序图")
+    plt.xlabel('销售日期')
+    plt.ylabel('销量（千克）')
+    plt.show()
+    return
+ 
+def draw_timeshort(df, col, lags=None, title='', figsize=(14, 8)):
+    fig = plt.figure(figsize=figsize)
+    layout = (2, 2)
+    ts_ax   = plt.subplot2grid(layout, (0, 0))
+    hist_ax = plt.subplot2grid(layout, (0, 1))
+    acf_ax  = plt.subplot2grid(layout, (1, 0))
+    pacf_ax = plt.subplot2grid(layout, (1, 1))
+    fig.suptitle(str(col)+'一阶差分的时序图、直方图、自相关图和偏自相关图')
+
+    df.plot(ax=ts_ax,color='royalblue')
+    ts_ax.set_title(title)
+    df.plot(ax=hist_ax, kind='hist', bins=25,color='royalblue')
+    hist_ax.set_title('Histogram')
+    smt.graphics.plot_acf(df, lags=lags, ax=acf_ax,color='royalblue')
+    smt.graphics.plot_pacf(df, lags=lags, ax=pacf_ax,color='royalblue')
+    [ax.set_xlim(0) for ax in [acf_ax, pacf_ax]]
+    sns.despine()
+    plt.tight_layout()
+    return ts_ax, acf_ax, pacf_ax
+
+def choose_model(df,col):
+    arma_mod20 = sm.tsa.ARIMA(df[str(col)],(1,1,0)).fit()
+    arma_mod30 = sm.tsa.ARIMA(df[str(col)],(0,1,1)).fit()
+    arma_mod40 = sm.tsa.ARIMA(df[str(col)],(1,1,1)).fit()
+    values = [[arma_mod20.aic,arma_mod20.bic,arma_mod20.hqic],[arma_mod30.aic,arma_mod30.bic,arma_mod30.hqic],[arma_mod40.aic,arma_mod40.bic,arma_mod40.hqic]]
+    DATA = pd.DataFrame(values,index=["AR(1,1,0)","MA(0,1,1)","ARMA(1,1,1)"],columns=["AIC","BIC","hqic"])
+    print(DATA)
+    return
+def choose(df,Ddf,col):
+    df = df.astype(float)
+    #定阶
+    pmax = int(len(Ddf)/10) #一般阶数不超过length/10
+    qmax = int(len(Ddf)/10) #一般阶数不超过length/10
+    bic_matrix = [] #bic矩阵
+    for p in range(pmax+1):
+        tmp = []
+        for q in range(qmax+1):
+            try: #存在部分报错，所以用try来跳过报错。
+                tmp.append(sm.tsa.arima.ARIMA(df, order=(p,1,q)).fit().aic)
+            except:
+                tmp.append(None)
+        bic_matrix.append(tmp)
+    bic_matrix = pd.DataFrame(bic_matrix) #从中可以找出最小值
+    p,q = bic_matrix.stack().idxmin() #先用stack展平，然后用idxmin找出最小值位置。
+    print(u'BIC最小的p值和q值为：%s、%s' %(p,q)) 
+    return
+
+ 
+
+
+for col in columns[1:]:
+    
+    #print(str(col)+"\n")
+    #print("单位根检验:\n")
+    df_d1=data.diff(1).dropna()
+    '''print(df_d1)
+    print(ADF(df_d1[str(col)]))
+    print()
+    print("白噪声检验:\n")
+    bzs=acorr_ljungbox(df_d1[str(col)], lags = [i for i in range(1,12)],boxpierce=True)
+    print(bzs)
+    print()
+    #draw_ts(data,col)
+    
+    draw_timeshort(df_d1[str(col)],col, title='Consumer Sentiment', lags=36)
+    plt.show()'''
+    #choose_model(data,col)
+    choose(data[str(col)],df_d1[str(col)],col)
